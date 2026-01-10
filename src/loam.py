@@ -1,8 +1,9 @@
 """
-Obsidian Vault Telegram Bot
+Loam
 
-A Telegram bot that interfaces with an Obsidian vault using Claude Code sessions.
-Each folder scope gets its own persistent Claude Code session.
+Loam is a cultivated space where links, notes, and thoughts grow over time.
+It interfaces a Telegram bot with Claude Code sessions managing an Obsidian vault.
+Each folder scope gets its own persistent Claude Code sessions.
 """
 import asyncio
 import logging
@@ -31,7 +32,7 @@ logger = logging.getLogger('loam.bot')
 logger.setLevel(logging.DEBUG)
 
 
-class ObsidianBot:
+class Loam:
     """Telegram bot for Obsidian vault management with Claude Code."""
 
     def __init__(self, params: dict):
@@ -64,13 +65,13 @@ class ObsidianBot:
         # Pending route proposals per user: {user_id: {"proposal": RouteProposal, "original_message": str}}
         self._pending_routes: dict[int, dict] = {}
 
-        # Load admin user
-        admin_path = os.path.join(self.repo_path, '.telegram_admin_user_id')
-        if os.path.exists(admin_path):
-            with open(admin_path, 'r') as f:
-                self.admin_user_id = int(f.read().strip())
-        else:
-            raise ValueError('Please add your telegram user id in .telegram_admin_user_id')
+        # # Load admin user
+        # admin_path = os.path.join(self.repo_path, '.telegram_admin_user_id')
+        # if os.path.exists(admin_path):
+        #     with open(admin_path, 'r') as f:
+        #         self.admin_user_id = int(f.read().strip())
+        # else:
+        #     raise ValueError('Please add your telegram user id in .telegram_admin_user_id')
 
         self._setup_handlers()
 
@@ -87,17 +88,23 @@ class ObsidianBot:
             scope = self.scope_manager.get_active_scope(user_id)
             session = self.scope_manager.get_current_session(user_id, scope)
 
-            text = "Hey! I'm your notes assistant.\n\n"
+            text = ("Hey! I'm Loam.\n"
+                    "This is a cultivated space where links, notes, and thoughts grow over time.\n\n")
 
             text += "**Folders** organize your notes by topic.\n"
             text += "**Sessions** are conversations within a folder.\n\n"
 
             if session:
-                scope_display = scope or "root"
+                scope_display = scope or "Notes (root)"
                 name = session.get('description') or "(unnamed)"
                 starred = " ⭐" if session.get('starred') else ""
                 text += f"📂 Folder: `{scope_display}`\n"
                 text += f"💬 Session: _{name}{starred}_\n\n"
+            elif scope is not None:
+                # User has an active scope but no session spawned yet (after /new, before first message)
+                scope_display = scope or "Notes (root)"
+                text += f"📂 Folder: `{scope_display}`\n"
+                text += f"💬 Session: _(unnamed)_\n\n"
             else:
                 text += "_No active session_\n\n"
 
@@ -129,7 +136,7 @@ class ObsidianBot:
                 await message.reply("Please /start first.")
                 return
 
-            # Start create flow at root
+            # Start create flow at notes (root)
             text = "Create new folder\n\n"
             text += "Navigate to the location where you want to create a folder:\n"
 
@@ -340,7 +347,7 @@ class ObsidianBot:
             folder_path = data[len('create_nav:'):]
             self.scope_manager.set_nav_position(user_id, folder_path)
 
-            folder_display = folder_path or "notes (root)"
+            folder_display = folder_path or "Notes (root)"
             text = f"{folder_display}\n\nSelect location or navigate deeper:"
 
             from src.ui.keyboards import build_create_position_keyboard
@@ -353,7 +360,7 @@ class ObsidianBot:
             parent = self.scope_manager.get_parent_path(current)
             self.scope_manager.set_nav_position(user_id, parent)
 
-            folder_display = parent or "notes (root)"
+            folder_display = parent or "Notes (root)"
             text = f"📁 {folder_display}\n\nSelect location:"
 
             from src.ui.keyboards import build_create_position_keyboard
@@ -363,7 +370,7 @@ class ObsidianBot:
 
         elif data.startswith('create_here:'):
             parent_path = data[len('create_here:'):]
-            folder_display = parent_path or "notes (root)"
+            folder_display = parent_path or "Notes (root)"
 
             text = f"Creating in {folder_display}\n\n"
             text += "What should the folder be called?\n"
@@ -637,6 +644,11 @@ class ObsidianBot:
         elif not response.text and not response.route_proposal:
             await original_message.reply("_No response from Claude._", parse_mode='Markdown')
 
+        # Apply profile updates silently
+        if response.profile_update:
+            self.scope_manager.update_user_profile(response.profile_update.content)
+            logger.info(f"[User {user_id}] Profile updated")
+
     async def _show_proposal_preview(self, user_id: int, proposal: NoteProposal):
         """Show a note proposal with approve/edit/cancel buttons."""
         # Store the pending proposal
@@ -804,8 +816,8 @@ class ObsidianBot:
         }
 
         current_scope = self.scope_manager.get_active_scope(user_id)
-        current_display = current_scope or "root"
-        target_display = proposal.target_scope or "root"
+        current_display = current_scope or "Notes (root)"
+        target_display = proposal.target_scope or "Notes (root)"
 
         text = f"📍 **Routing suggestion**\n\n"
         text += f"_{proposal.reason}_\n\n"
@@ -859,7 +871,7 @@ class ObsidianBot:
                 self._pending_routes.pop(user_id, None)
 
                 # Ask save/discard
-                scope_display = current_scope or "notes (root)"
+                scope_display = current_scope or "Notes (root)"
                 text = f"Your current session in **{scope_display}** is unnamed.\n\n"
                 text += "Would you like to save it before switching?"
 
@@ -886,7 +898,7 @@ class ObsidianBot:
             # Create new session
             self.scope_manager.create_new_session(user_id, target_scope)
 
-        target_display = target_scope or "root"
+        target_display = target_scope or "Notes (root)"
         await callback.message.edit_text(
             f"✓ Routed to **{target_display}**. Any notes will be created there.",
             parse_mode='Markdown'
@@ -903,7 +915,7 @@ class ObsidianBot:
         else:
             self.scope_manager.create_new_session(user_id, target_scope)
 
-        target_display = target_scope or "root"
+        target_display = target_scope or "Notes (root)"
 
         # Context can be a message or callback
         if hasattr(context, 'reply'):

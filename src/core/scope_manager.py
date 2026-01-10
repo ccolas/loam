@@ -9,7 +9,7 @@ from src.utils import get_repo_path
 
 class ScopeManager:
     """
-    Manages folder scopes and user session state for the Obsidian vault.
+    Manages folder scopes and user session state for Loam.
 
     Each user has:
     - An active scope (folder path relative to notes/)
@@ -96,7 +96,7 @@ class ScopeManager:
         return self.notes_path
 
     # Folders to hide from navigation
-    HIDDEN_FOLDERS = {'attachments', '.obsidian', '.git'}
+    HIDDEN_FOLDERS = {'attachments', '.obsidian', '.git', '.loam'}
 
     def list_folders(self, relative_path: str = '') -> list[str]:
         """
@@ -471,3 +471,27 @@ class ScopeManager:
         starred.sort(key=lambda s: s.get('scope', ''))
 
         return starred
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # User profile (cross-scope memories)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def get_profile_path(self) -> str:
+        """Get path to the user profile file."""
+        loam_dir = os.path.join(self.notes_path, '.loam')
+        os.makedirs(loam_dir, exist_ok=True)
+        return os.path.join(loam_dir, 'profile.md')
+
+    def get_user_profile(self) -> str:
+        """Read the user profile. Returns empty string if none exists."""
+        path = self.get_profile_path()
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                return f.read()
+        return ""
+
+    def update_user_profile(self, content: str):
+        """Update the user profile."""
+        path = self.get_profile_path()
+        with open(path, 'w') as f:
+            f.write(content)

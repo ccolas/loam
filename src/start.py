@@ -1,11 +1,11 @@
 """
-Start script for Obsidian Bot.
+Start script for Loam.
 """
 import asyncio
 import logging
 import sys
 
-from src.obsidian_bot import ObsidianBot
+from src.loam import Loam
 
 
 def setup_logging():
@@ -45,8 +45,8 @@ params = {
 
 async def run_bot():
     while True:
-        print('Starting Obsidian Bot...')
-        bot = ObsidianBot(params)
+        print('Starting Loam...')
+        bot = Loam(params)
         try:
             await bot.start()
         except Exception as e:

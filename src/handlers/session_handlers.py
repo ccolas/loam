@@ -61,6 +61,10 @@ class SessionHandlers:
             starred = " ⭐" if session.get('starred') else ""
             text = f"📂 `{scope_display}`\n"
             text += f"💬 _{name}{starred}_"
+        elif scope is not None:
+            # User has an active scope but no session spawned yet (after /new, before first message)
+            text = f"📂 `{scope_display}`\n"
+            text += f"💬 _(unnamed)_"
         else:
             text = f"📂 `{scope_display}`\n"
             text += f"💬 _no active session_"

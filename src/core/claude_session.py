@@ -37,6 +37,12 @@ class RouteProposal:
 
 
 @dataclass
+class ProfileUpdate:
+    """An update to the user profile."""
+    content: str
+
+
+@dataclass
 class ClaudeResponse:
     """Response from Claude Code session."""
     text: str
@@ -45,6 +51,7 @@ class ClaudeResponse:
     error: Optional[str] = None
     proposal: Optional[NoteProposal] = None  # If Claude proposed a note
     route_proposal: Optional[RouteProposal] = None  # If Claude suggests routing elsewhere
+    profile_update: Optional[ProfileUpdate] = None  # If Claude updated the user profile
 
 
 class ClaudeSessionManager:
@@ -148,23 +155,45 @@ class ClaudeSessionManager:
         # Add system prompt for context
         scope_display = scope if scope else 'notes (root)'
         all_scopes = self.scope_manager.get_all_folders_flat()
-        system_prompt = self._build_system_prompt(scope_display, all_scopes)
+        user_profile = self.scope_manager.get_user_profile()
+        system_prompt = self._build_system_prompt(scope_display, all_scopes, user_profile)
         cmd.extend(['--system-prompt', system_prompt])
 
         return cmd
 
-    def _build_system_prompt(self, scope_display: str, all_scopes: list[str]) -> str:
+    def _build_system_prompt(self, scope_display: str, all_scopes: list[str], user_profile: str = "") -> str:
         """Build the system prompt for the Claude session."""
+        from datetime import datetime
+
+        # Get current date and time
+        now = datetime.now()
+        current_datetime = now.strftime("%Y-%m-%d %H:%M")
+
         # Format scope list
         if all_scopes:
             scopes_list = ", ".join(all_scopes)
         else:
             scopes_list = "(only root)"
 
+        # Format user profile section
+        if user_profile:
+            profile_section = f"""## User Profile
+
+The following is what you've learned about this user. Use this to personalize your responses and understand their goals.
+
+{user_profile}
+
+"""
+        else:
+            profile_section = ""
+
         return f"""You are a personal assistant empowering a user to explore their interests and helping them manage a database of corresponding notes via an Obsidian vault. You interact with the user via Telegram.
 
+Current date/time: {current_datetime}
 Current folder: {scope_display}
 Available folders: {scopes_list}
+
+{profile_section}
 
 You have read access to notes in this folder and subfolders. You can read files freely.
 
@@ -246,6 +275,38 @@ If content doesn't fit the current folder structure, propose a new logical path.
 The user will then approve, request edits, or cancel. Only after approval should you actually write the file.
 
 For MINOR edits (fixing typos, small additions), you can proceed directly.
+
+## User Profile Updates
+
+You maintain a profile of what you learn about the user — their interests, goals, preferences, and how they like to work. This helps you serve them better over time.
+
+When you learn something significant about the user (a new interest, a goal they mention, how they prefer to organize things, recurring themes), update the profile using this format:
+
+[UPDATE_PROFILE]
+## Interests
+- Philosophy, especially epistemology and phenomenology
+- ...
+
+## Goals
+- Building a personal knowledge base
+- ...
+
+## Preferences
+- Prefers concise notes with clear structure
+- ...
+
+## Themes
+- Exploring the relationship between X and Y
+- ...
+[/UPDATE_PROFILE]
+
+Include the FULL updated profile (not just changes). Updates are applied automatically. Update the profile when you notice:
+- New interests or topics they're exploring
+- Goals they mention or imply
+- Preferences about note style, interaction, or organization
+- Recurring themes across their notes and conversations
+
+Don't update on every message — only when there's something meaningful to remember.
 
 ## Guidelines
 - Use Obsidian-compatible markdown with YAML frontmatter
@@ -435,6 +496,9 @@ For MINOR edits (fixing typos, small additions), you can proceed directly.
         # Check for route proposal
         route_proposal = self._extract_route_proposal(full_text)
 
+        # Check for profile update
+        profile_update = self._extract_profile_update(full_text)
+
         # Clean the text - remove proposal blocks from displayed text
         display_text = full_text
 
@@ -459,12 +523,22 @@ For MINOR edits (fixing typos, small additions), you can proceed directly.
             ).strip()
             # The route reason will be shown separately with buttons
 
+        if profile_update:
+            display_text = re.sub(
+                r'\[UPDATE_PROFILE\].*?\[/UPDATE_PROFILE\]',
+                '',
+                display_text,
+                flags=re.DOTALL
+            ).strip()
+            # Profile updates are applied silently
+
         return ClaudeResponse(
             text=display_text,
             session_id=session_id,
             cost_usd=cost_usd,
             proposal=proposal,
-            route_proposal=route_proposal
+            route_proposal=route_proposal,
+            profile_update=profile_update
         )
 
     def _extract_proposal(self, text: str) -> Optional[NoteProposal]:
@@ -505,6 +579,18 @@ For MINOR edits (fixing typos, small additions), you can proceed directly.
             target_scope=target_scope,
             reason=reason
         )
+
+    def _extract_profile_update(self, text: str) -> Optional[ProfileUpdate]:
+        """Extract a profile update from Claude's response if present."""
+        # Pattern: [UPDATE_PROFILE]...content...[/UPDATE_PROFILE]
+        pattern = r'\[UPDATE_PROFILE\](.*?)\[/UPDATE_PROFILE\]'
+        match = re.search(pattern, text, re.DOTALL)
+
+        if not match:
+            return None
+
+        content = match.group(1).strip()
+        return ProfileUpdate(content=content)
 
     def get_session_info(self, user_id: int, scope: str) -> dict:
         """Get info about a session."""

@@ -172,3 +172,4 @@ data/*
 data/misc
 data/tmp
 .DS_Store
+notes/
